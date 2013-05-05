@@ -23,6 +23,8 @@
 
 namespace SimpleThings\EntityAudit;
 
+use Doctrine\ORM\ORMException;
+
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Mapping\ClassMetadata;
@@ -395,6 +397,64 @@ class AuditReader
         $revision = $this->em->getConnection()->fetchColumn($query, array_values($id));
 
         return $revision;
+    }
+    
+    /**
+     * 
+     * @param string $className
+     * @param mixed $id
+     * @param array $columnNames
+     */
+    public function getRevisionsForColumns($className, $id,array $columnNames, $order = 'DESC'){
+        if (!$this->metadataFactory->isAudited($className)) {
+            throw AuditException::notAudited($className);
+        }
+        
+        $class = $this->em->getClassMetadata($className);
+        $tableName = $this->config->getTablePrefix() . $class->table['name'] . $this->config->getTableSuffix();
+        
+        $groupBy = '';
+        $columns = '';
+        
+        foreach($columnNames as $columnName){
+            if(!$class->hasField($columnName))
+                throw ORMException::unrecognizedField($columnName);
+            
+            $columns .= "e.".$columnName.", ";
+            $groupBy .= "e.".$columnName.", ";
+        }
+        
+        $columns = substr($columns, 0, -2);
+        $groupBy = substr($groupBy, 0, -2);
+        
+        if (!is_array($id)) {
+            $id = array($class->identifier[0] => $id);
+        }
+        
+        $whereSQL = "";
+        foreach ($class->identifier AS $idField) {
+            if (isset($class->fieldMappings[$idField])) {
+                if ($whereSQL) {
+                    $whereSQL .= " AND ";
+                }
+                $whereSQL .= "e." . $class->fieldMappings[$idField]['columnName'] . " = ?";
+            } else if (isset($class->associationMappings[$idField])) {
+                if ($whereSQL) {
+                    $whereSQL .= " AND ";
+                }
+                $whereSQL .= "e." . $class->associationMappings[$idField]['joinColumns'][0] . " = ?";
+            }
+        }
+        
+        $query = "SELECT e.".$this->config->getRevisionFieldName().", e.".$this->config->getRevisionTypeFieldName().", r.timestamp, r.username, ".$columns;
+        
+        $query .= " FROM " . $tableName . " e " .
+                    "INNER JOIN " . $this->config->getRevisionTableName() . " r ON r.id = e." . $this->config->getRevisionFieldName() .
+                    " WHERE " . $whereSQL ." GROUP BY ".$groupBy." ORDER BY e.".$this->config->getRevisionFieldName()." ".$order;
+         
+        $revisions = $this->em->getConnection()->fetchAll($query, array_values($id));
+        
+        return $revisions;
     }
 
     protected function getEntityPersister($entity)

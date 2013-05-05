@@ -21,6 +21,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
+
+
 namespace SimpleThings\EntityAudit\Tests;
 
 use Doctrine\Common\EventManager;
@@ -29,6 +31,7 @@ use SimpleThings\EntityAudit\EventListener\LogRevisionsListener;
 use SimpleThings\EntityAudit\Metadata\MetadataFactory;
 use SimpleThings\EntityAudit\AuditConfiguration;
 use SimpleThings\EntityAudit\AuditManager;
+use Doctrine\ORM\ORMException;
 
 use Doctrine\ORM\Mapping AS ORM;
 
@@ -204,6 +207,50 @@ class FunctionalTest extends \PHPUnit_Framework_TestCase
     	$revision = $reader->getCurrentRevision(get_class($user), $user->getId());
     	$this->assertEquals(3, $revision);
     }
+    
+    /**
+     * @expectedException     Doctrine\ORM\ORMException
+     */
+    public function testUnknownColumnThrowsException(){
+        $user = new UserAudit('Broncha');
+        $user->setAddress('Kathmandu');
+        $user->setAka('Rajesh');
+         
+        $this->em->persist($user);
+        $this->em->flush();
+        
+        $reader = $this->auditManager->createAuditReader($this->em);
+        $user->setAddress('Putalisadak');
+        $user->setAka('David');
+        $this->em->flush();
+        
+        $revData = $reader->getRevisionsForColumns(get_class($user), $user->getId(), array('addresso','aka'), 'ASC');
+    }
+    
+    public function testFindRevisionData(){
+        $user = new UserAudit('Broncha');
+        $user->setAddress('Kathmandu');
+        $user->setAka('Rajesh');
+         
+        $this->em->persist($user);
+        $this->em->flush();
+        
+        $reader = $this->auditManager->createAuditReader($this->em);
+        $user->setAddress('Putalisadak');
+        $user->setAka('David');
+        $this->em->flush();
+        
+        $revData = $reader->getRevisionsForColumns(get_class($user), $user->getId(), array('address','aka'), 'ASC');
+        $this->assertEquals(2, count($revData));
+        
+        $user->setAddress('Kalikasthan');
+        $this->em->flush();
+        $revData = $reader->getRevisionsForColumns(get_class($user), $user->getId(), array('aka'), 'ASC');
+        $this->assertEquals(2, count($revData));
+        
+        $revData = $reader->getRevisionsForColumns(get_class($user), $user->getId(), array('aka','address'), 'ASC');
+        $this->assertEquals(3, count($revData));
+    }
 
     public function setUp()
     {
@@ -279,6 +326,12 @@ class UserAudit
     private $id;
     /** @ORM\Column(type="string") */
     private $name;
+    
+    /** @ORM\Column(type="string", nullable=true) */
+    private $aka;
+    
+    /** @ORM\Column(type="string", nullable=true) */
+    private $address;
 
     function __construct($name)
     {
@@ -289,6 +342,15 @@ class UserAudit
     {
         $this->name = $name;
     }
+    
+    public function setAddress($address)
+    {
+        $this->address = $address;
+    }
+    
+    public function setAka($aka){
+        $this->aka = $aka;
+    }
 
     public function getId()
     {
@@ -298,5 +360,14 @@ class UserAudit
     public function getName()
     {
         return $this->name;
+    }
+    
+    public function getAddress()
+    {
+        return $this->address;
+    }
+    
+    public function getAka(){
+        return $this->aka;
     }
 }
