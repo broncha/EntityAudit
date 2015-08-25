@@ -160,6 +160,10 @@ class LogRevisionsListener implements EventSubscriber
                 : null;
 
             $this->revisionId = $this->conn->lastInsertId($sequenceName);
+            
+            if(is_null($this->revisionId)) {
+                $this->revisionId = $this->conn->lastInsertId();
+            }
         }
         return $this->revisionId;
     }
